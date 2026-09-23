@@ -58,4 +58,15 @@ public class DocumentController {
                 file
         );
     }
+
+    @GetMapping("/{documentId}")
+    public DocumentResponse getDocument(
+            @RequestParam Long userId,
+            @PathVariable Long documentId
+    ) {
+        return documentService.getDocument(
+                userId,
+                documentId
+        );
+    }
 }

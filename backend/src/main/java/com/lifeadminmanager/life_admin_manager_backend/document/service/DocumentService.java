@@ -18,91 +18,131 @@ import java.time.OffsetDateTime;
 
 @Service
 public class DocumentService {
-    private final DocumentRepository documentRepository;
-    private final DocumentVersionRepository documentVersionRepository;
-    private final UserRepository userRepository;
-    private final FileStorageService fileStorageService;
-    private final FileValidationService fileValidationService;
+        private final DocumentRepository documentRepository;
+        private final DocumentVersionRepository documentVersionRepository;
+        private final UserRepository userRepository;
+        private final FileStorageService fileStorageService;
+        private final FileValidationService fileValidationService;
 
-    public DocumentService(
-            DocumentRepository documentRepository,
-            DocumentVersionRepository documentVersionRepository,
-            UserRepository userRepository,
-            FileStorageService fileStorageService,
-            FileValidationService fileValidationService
-    ){
-        this.documentRepository=documentRepository;
-        this.documentVersionRepository=documentVersionRepository;
-        this.userRepository=userRepository;
-        this.fileStorageService=fileStorageService;
-        this.fileValidationService=fileValidationService;
-    }
-
-    @Transactional
-    public DocumentResponse createDocument(
-            Long userId,
-            CreateDocumentRequest request,
-            MultipartFile file
-    ){
-        User user=userRepository.findById(userId)
-                .orElseThrow(()->new IllegalArgumentException("User not found"));
-        if(!request.expiryDate().isAfter(LocalDate.now())){
-            throw new IllegalArgumentException("Expiry Date should be in future");
+        public DocumentService(
+                        DocumentRepository documentRepository,
+                        DocumentVersionRepository documentVersionRepository,
+                        UserRepository userRepository,
+                        FileStorageService fileStorageService,
+                        FileValidationService fileValidationService) {
+                this.documentRepository = documentRepository;
+                this.documentVersionRepository = documentVersionRepository;
+                this.userRepository = userRepository;
+                this.fileStorageService = fileStorageService;
+                this.fileValidationService = fileValidationService;
         }
 
-        if(request.issueDate().isAfter(request.expiryDate())){
-            throw new IllegalArgumentException("Issue date cannot be after Expiry date");
+        @Transactional
+        public DocumentResponse createDocument(
+                        Long userId,
+                        CreateDocumentRequest request,
+                        MultipartFile file) {
+                User user = userRepository.findById(userId)
+                                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                if (!request.expiryDate().isAfter(LocalDate.now())) {
+                        throw new IllegalArgumentException("Expiry Date should be in future");
+                }
+
+                if (request.issueDate().isAfter(request.expiryDate())) {
+                        throw new IllegalArgumentException("Issue date cannot be after Expiry date");
+                }
+
+                fileValidationService.validate(file);
+                String storageKey = fileStorageService.store(file);
+
+                Document document = new Document();
+                document.setUser(user);
+                document.setDocumentType(request.documentType());
+                document.setTitle(request.title());
+
+                OffsetDateTime now = OffsetDateTime.now();
+
+                document.setCreatedAt(now);
+                document.setUpdatedAt(now);
+
+                Document savedDocument = documentRepository.save(document);
+
+                DocumentVersion documentVersion = new DocumentVersion();
+
+                documentVersion.setDocument(savedDocument);
+                documentVersion.setVersionNumber(1);
+                documentVersion.setFileName(file.getOriginalFilename());
+                documentVersion.setStorageKey(storageKey);
+                documentVersion.setMimeType(file.getContentType());
+                documentVersion.setFileSizeBytes(file.getSize());
+                documentVersion.setIssueDate(request.issueDate());
+                documentVersion.setExpiryDate(request.expiryDate());
+                documentVersion.setIsCurrent(true);
+                documentVersion.setUploadedAt(now);
+
+                DocumentVersion savedVersion = documentVersionRepository.save(documentVersion);
+
+                DocumentVersionResponse versionResponse = new DocumentVersionResponse(
+                                savedVersion.getId(),
+                                savedVersion.getVersionNumber(),
+                                savedVersion.getFileName(),
+                                savedVersion.getMimeType(),
+                                savedVersion.getFileSizeBytes(),
+                                savedVersion.getIssueDate(),
+                                savedVersion.getExpiryDate(),
+                                savedVersion.getIsCurrent(),
+                                savedVersion.getUploadedAt());
+                return new DocumentResponse(
+                                savedDocument.getId(),
+                                savedDocument.getDocumentType(),
+                                savedDocument.getTitle(),
+                                versionResponse,
+                                savedDocument.getCreatedAt(),
+                                savedDocument.getUpdatedAt());
         }
 
-        fileValidationService.validate(file);
-        String storageKey=fileStorageService.store(file);
+        public DocumentResponse getDocument(Long userId, Long documentId){
+                Document document=documentRepository.findById(documentId)
+                        .orElseThrow(()->
+                                new IllegalArgumentException("Document not found"));
 
-        Document document=new Document();
-        document.setUser(user);
-        document.setDocumentType(request.documentType());
-        document.setTitle(request.title());
+                if(!document.getUser().getId().equals(userId)){
+                        throw new IllegalArgumentException("Document does not belongs to the user");
+                }
 
-        OffsetDateTime now=OffsetDateTime.now();
+                if(document.getDeletedAt()!=null){
+                        throw new IllegalArgumentException("Document not found");
+                }
 
-        document.setCreatedAt(now);
-        document.setUpdatedAt(now);
+                DocumentVersion currentVersion =
+                        documentVersionRepository
+                                .findByDocumentIdAndIsCurrentTrue(documentId)
+                                .orElseThrow(() ->
+                                        new IllegalArgumentException(
+                                                "Current document version not found"
+                                        )
+                                );
 
-        Document savedDocument=documentRepository.save(document);
+                DocumentVersionResponse versionResponse =
+                        new DocumentVersionResponse(
+                                currentVersion.getId(),
+                                currentVersion.getVersionNumber(),
+                                currentVersion.getFileName(),
+                                currentVersion.getMimeType(),
+                                currentVersion.getFileSizeBytes(),
+                                currentVersion.getIssueDate(),
+                                currentVersion.getExpiryDate(),
+                                currentVersion.getIsCurrent(),
+                                currentVersion.getUploadedAt()
+                        );
 
-        DocumentVersion documentVersion=new DocumentVersion();
-
-        documentVersion.setDocument(savedDocument);
-        documentVersion.setVersionNumber(1);
-        documentVersion.setFileName(file.getOriginalFilename());
-        documentVersion.setStorageKey(storageKey);
-        documentVersion.setMimeType(file.getContentType());
-        documentVersion.setFileSizeBytes(file.getSize());
-        documentVersion.setIssueDate(request.issueDate());
-        documentVersion.setExpiryDate(request.expiryDate());
-        documentVersion.setCurrent(true);
-        documentVersion.setUploadedAt(now);
-
-        DocumentVersion savedVersion=documentVersionRepository.save(documentVersion);
-
-        DocumentVersionResponse versionResponse=
-                new DocumentVersionResponse(
-                        savedVersion.getId(),
-                        savedVersion.getVersionNumber(),
-                        savedVersion.getFileName(),
-                        savedVersion.getMimeType(),
-                        savedVersion.getFileSizeBytes(),
-                        savedVersion.getIssueDate(),
-                        savedVersion.getExpiryDate(),
-                        savedVersion.getCurrent(),
-                        savedVersion.getUploadedAt()
+                return new DocumentResponse(
+                        document.getId(),
+                        document.getDocumentType(),
+                        document.getTitle(),
+                        versionResponse,
+                        document.getCreatedAt(),
+                        document.getUpdatedAt()
                 );
-        return new DocumentResponse(
-                savedDocument.getId(),
-                savedDocument.getDocumentType(),
-                savedDocument.getTitle(),
-                versionResponse,
-                savedDocument.getCreatedAt(),
-                savedDocument.getUpdatedAt()
-        );
-    }
+        }
 }
