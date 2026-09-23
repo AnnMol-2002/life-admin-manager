@@ -2,13 +2,19 @@ package com.lifeadminmanager.life_admin_manager_backend.document.service;
 
 import com.lifeadminmanager.life_admin_manager_backend.document.dto.CreateDocumentRequest;
 import com.lifeadminmanager.life_admin_manager_backend.document.dto.DocumentResponse;
+import com.lifeadminmanager.life_admin_manager_backend.document.dto.DocumentVersionResponse;
+import com.lifeadminmanager.life_admin_manager_backend.document.entity.Document;
+import com.lifeadminmanager.life_admin_manager_backend.document.entity.DocumentVersion;
 import com.lifeadminmanager.life_admin_manager_backend.document.repository.DocumentRepository;
 import com.lifeadminmanager.life_admin_manager_backend.document.repository.DocumentVersionRepository;
+import com.lifeadminmanager.life_admin_manager_backend.user.entity.User;
 import com.lifeadminmanager.life_admin_manager_backend.user.repository.UserRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 
 @Service
 public class DocumentService {
@@ -32,17 +38,71 @@ public class DocumentService {
         this.fileValidationService=fileValidationService;
     }
 
-//    public DocumentResponse createDocument(
-//            Long userId,
-//            CreateDocumentRequest request,
-//            MultipartFile file
-//    ){
-//        if(!request.expiryDate().isAfter(LocalDate.now())){
-//            throw new IllegalArgumentException("Expiry Date should be in future");
-//        }
-//
-//        if(!request.issueDate().isAfter(request.expiryDate())){
-//            throw new IllegalArgumentException("Issue date cannot be after Expiry date");
-//        }
-//    }
+    @Transactional
+    public DocumentResponse createDocument(
+            Long userId,
+            CreateDocumentRequest request,
+            MultipartFile file
+    ){
+        User user=userRepository.findById(userId)
+                .orElseThrow(()->new IllegalArgumentException("User not found"));
+        if(!request.expiryDate().isAfter(LocalDate.now())){
+            throw new IllegalArgumentException("Expiry Date should be in future");
+        }
+
+        if(request.issueDate().isAfter(request.expiryDate())){
+            throw new IllegalArgumentException("Issue date cannot be after Expiry date");
+        }
+
+        fileValidationService.validate(file);
+        String storageKey=fileStorageService.store(file);
+
+        Document document=new Document();
+        document.setUser(user);
+        document.setDocumentType(request.documentType());
+        document.setTitle(request.title());
+
+        OffsetDateTime now=OffsetDateTime.now();
+
+        document.setCreatedAt(now);
+        document.setUpdatedAt(now);
+
+        Document savedDocument=documentRepository.save(document);
+
+        DocumentVersion documentVersion=new DocumentVersion();
+
+        documentVersion.setDocument(savedDocument);
+        documentVersion.setVersionNumber(1);
+        documentVersion.setFileName(file.getOriginalFilename());
+        documentVersion.setStorageKey(storageKey);
+        documentVersion.setMimeType(file.getContentType());
+        documentVersion.setFileSizeBytes(file.getSize());
+        documentVersion.setIssueDate(request.issueDate());
+        documentVersion.setExpiryDate(request.expiryDate());
+        documentVersion.setCurrent(true);
+        documentVersion.setUploadedAt(now);
+
+        DocumentVersion savedVersion=documentVersionRepository.save(documentVersion);
+
+        DocumentVersionResponse versionResponse=
+                new DocumentVersionResponse(
+                        savedVersion.getId(),
+                        savedVersion.getVersionNumber(),
+                        savedVersion.getFileName(),
+                        savedVersion.getMimeType(),
+                        savedVersion.getFileSizeBytes(),
+                        savedVersion.getIssueDate(),
+                        savedVersion.getExpiryDate(),
+                        savedVersion.getCurrent(),
+                        savedVersion.getUploadedAt()
+                );
+        return new DocumentResponse(
+                savedDocument.getId(),
+                savedDocument.getDocumentType(),
+                savedDocument.getTitle(),
+                versionResponse,
+                savedDocument.getCreatedAt(),
+                savedDocument.getUpdatedAt()
+        );
+    }
 }

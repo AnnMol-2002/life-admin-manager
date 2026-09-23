@@ -4,6 +4,9 @@ import com.lifeadminmanager.life_admin_manager_backend.document.enums.DocumentTy
 import com.lifeadminmanager.life_admin_manager_backend.user.entity.User;
 import jakarta.persistence.*;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.time.OffsetDateTime;
 
 @Entity
@@ -19,6 +22,7 @@ public class Document {
     private User user;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "document_type",nullable = false)
     private DocumentType documentType;
 
@@ -60,5 +64,33 @@ public class Document {
 
     public OffsetDateTime getDeletedAt() {
         return deletedAt;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public void setUser(User user) {
+        this.user = user;
+    }
+
+    public void setDocumentType(DocumentType documentType) {
+        this.documentType = documentType;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public void setCreatedAt(OffsetDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public void setUpdatedAt(OffsetDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    public void setDeletedAt(OffsetDateTime deletedAt) {
+        this.deletedAt = deletedAt;
     }
 }
